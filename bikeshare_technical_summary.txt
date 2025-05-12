@@ -1,0 +1,857 @@
+bikeshare_technical_summary
+April 2024
+Tom Best
+
+This file starts with code used for exploratory data analysis, then outlines the main questions I wanted to answer for the analysis itself, and provides code work done to answer each question in order.
+
+***************Bikeshare_Project_EDA:**************************************************************
+
+STATIONS TABLE:
+number - not sure we'll need it because we have ID that seems to match with ID in trips tables. I could not find any nulls.
+
+name - I could not find any nulls. update 4/22/24: there are nulls in names when tables are unioned and joined. could it be just 2016 or just certain years? Maybe I need to backfill station names based on IDs. Looks like all IDs are there. nulls could have existed before join...
+
+latitude - no nulls
+
+longitude - no nulls
+
+district - no nulls
+
+public - seems to be a yes/no field but all values say yes. no nulls. basically irrelevant. 
+
+total_docks - minimum 10 docks. maximum 47 docks. no nulls. hmmm.... don't know if I'll have time to get to this level of analysis or if it's relevant to the big questions I need to answer but it might be interesting to see avg weekly (or annual or whatever) trips from station A per number of docks at station A. #trips/# docks at stations could be a good indicator of whether a station has too many or not enough docks for the demand it experiences. I don't think I'll need to dig into this. 6,004 docks in total. not quite the recommended double the number of bikes recommended by zagster report.
+
+id - there are 339 rows. There are 336 counted station ids. same # for count distinct. 3 null station ids. are they duplicate stations? stations that are no longer in use? stations that are being onboarded but not yet in use?
+ The station names with null id values are 
+"Graham and Parks School ? Linnaean St at Walker St"
+"N. Beacon St at N. Beacon Ct"
+"Watertown Sq"
+probably decommissioned or being onboarded / not yet in use because I can't find any stations that look like duplicates based on name or lat/long.
+
+
+
+TRIPS TABLE:
+2016 = 1236203 rows
+2017 = 1313774 rows
+2018 = 1767806 rows
+2019 = 2522537 rows
+all years = 6840320 total rows.
+
+there is no User ID (visible to us). I think that means that there is no way for us to account for user cardinality within trips data. We could have one user claiming to be born in 1902 making 12 trips or 1 trip.
+
+bike_id - no nulls in any year. 
+2016 = 1802 bikes (not accounting for bikes retired during year) same #according to website
+2017 = 1799 bikes (not accounting for bikes retired during year) same #according to website
+2018 = 4045 bikes (not accounting for bikes retired during year) real number is "2,500+" according to website
+2019 = 4652 bikes (not accounting for bikes retired during year) real number is "3,500+" according to website
+
+start_time + end_time - timestamp without timezone for all years.
+2017 just has hour minute second without millisecond. all other years have millisecond. Do I cast 2017 to have milliseconds or round all other years to not have them? Cast 2017 to have milliseconds... preserve integrity of data already captured in other years. shouldn't be problems anywhere with simultaneous start times bc each bike is unique.
+some trips start in a given year but end on the next year. (NYE trips). the date range of my data is 2016-01-01 to 2020-01-13
+yyyy-mm-dd
+calculating trip length will be crucial. use age.
+
+start station ID - No nulls in start or end in any year.
+end station ID - No nulls in start or end in any year.
+
+user_type - "Customer" or "Subscriber" all years. no nulls. 1326499 customer trips 19.39%. 5513821 subscriber trips 80.61%  Customer = single trip or day pass user. Subscriber = annual or monthly member. If I want to calculate the $ value of two types (which are really 4 types) I'll probably need to come up with one price model for each that approximates what a blend would look like.
+
+user_birth_year - voluntary / user input. nulls exist in all years except 2019. some years have lots of nulls. 1863 oldest. youngest 2003/2002/2001/2000 (16 year old min age? yes). 447149 total nulls. That's 6.5% of our records. not a huge deal. 25943 nulls are from subscriber trips. 421206 nulls are from customer trips.  NO BIRTH YEAR FOR CUSTOMERS... in specific years??
+
+--just customers. looking for birth nulls by year--
+--2016. 202893 nulls. 252264 trips. only 19.6% of customer trips had birth year info in 2016.--
+--2017. 209036 nulls. 209036 trips. 0% of customer trips had birth year info in 2017--
+--2018. 9277 nulls. 331129 trips. 97.2% of customer trips had birth year info in 2018--
+--2019. no nulls.
+select user_birth_year::numeric, user_type, count(*)
+from bluebikes_2019
+where user_birth_year is null and user_type Like 'Customer'
+group by 1,2
+order by 1 desc
+limit 50
+;
+
+--just subscribers. looking for nulls by year--
+--2016. 23717 nulls. 983939 trips. 97.6% of subscriber trips had birth year info in 2016.--
+--2017. 1911 nulls. 1104738 trips. high% of subscriber trips had birth year info in 2017.--
+--2018. 315 nulls. 1436677 trips. high% of subscriber trips had birth year info in 2018.--
+--2019. no nulls.--
+select user_birth_year::numeric, user_type, count(*)
+from bluebikes_2019
+where user_birth_year is null and user_type Like 'Subscriber'
+group by 1,2
+order by 1 desc
+limit 50
+;
+
+
+--started with this one today 4-3-24. looking at distribution of trips by user birth year.--
+select user_birth_year::numeric, count(user_birth_year)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+	group by 1
+	order by 1 desc
+limit 50
+;
+--this one gives a count of the nulls. I don't THINK it changes the count for each year--
+select user_birth_year::numeric, count(*)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+	group by 1
+	order by 1 desc
+limit 50
+;
+user_gender - (Zero=unknown (953292. 13.9%); 1=male (4380377. 64%); 2=female (1506651. 22%)). no nulls in any year.
+
+
+when I union the trips tables it would be interesting to see if there is a difference between the sum of the total records and the sum of the individual table records combined (that would tell me if unioning the tables removed duplicates). I don't think it should be possible for there to be a duplicate because of the specificity of the timestamp. No duplicates removed!
+
+bluebikes' data dictionary says they screen for trips less than 60 seconds because they are likely erroneous trips. I agree but wonder if they did that back in 2016. I'd like to screen for erroneous trips on my own within the years I'm given. 
+
+there are a number of trips that start on one day and end many days later... are they anomalies? must have cost a fortune. how many are there? how many trips are within the same day? now I want to calculate age of each trip and sort through to get a feel for what constitutes 'typical' trip length and how the distribution of various trip lengths looks.
+
+will need to account for unreasonably high ages. convert unreasonable high age trips to nulls? will need to create generational demographics
+
+what about people who pay cash? what's the least info I can give hubwheels/bluebikes before taking a ride? in 2016? in 2017? in 2018? in 2019?
+
+
+
+
+--basic union for all years. gives count of 6840320 records.--
+select count(*)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+limit 10
+;
+-----------
+--not there yet for trip length... early attempt--
+select age(start_time, end_time) trip_length
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+order by trip_length 
+limit 10
+;
+
+
+--customer trips in a year?--
+select count(*)
+from bluebikes_2018
+where user_type Like 'Customer'
+limit 50
+;
+
+--subscriber trips in a year?--
+select count(*)
+from bluebikes_2019
+where user_type Like 'Subscriber'
+limit 50
+;
+
+
+--how I counted total trips per year-
+select date_trunc('year', start_time) as year, count(bike_id)
+from (select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+group by 1
+order by 1
+limit 5
+;
+
+--how I verified no bike IDs contain nulls--
+select count(*), bike_id
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+	where bike_id is null
+	group by bike_id
+limit 5
+;
+
+--how I verified no user_type contain nulls--
+select user_type
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+	where user_type is null
+limit 5
+;
+
+--how I triple checked upper/lower user_birth_year bounds. changed each year to toggle through them. helped me catch the change in year format in 2018 with rebrand from Hubway to Bluebikes.--
+
+select user_birth_year, count(*)
+from bluebikes_2019
+group by 1
+order by 1 desc
+limit 50
+;
+
+--getting a better feel for null existence in birth year by user type:--
+--how many subscriber trips occurred where user_birth_year was null?--
+--25943--
+select user_birth_year::numeric, user_type, count(*)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+	where user_birth_year is null and user_type Like 'Subscriber'
+	group by 1,2
+	order by 1 desc
+limit 50
+;
+
+--how many customer trips occurred where user_birth_year was null?--
+--421206--
+select user_birth_year::numeric, user_type, count(*)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+	where user_birth_year is null and user_type Like 'Customer'
+	group by 1,2
+	order by 1 desc
+limit 50
+;
+
+--let's do some work on individual years to make sure I understand minminum rider age--
+select user_birth_year, count(*)
+from bluebikes_2016
+group by 1
+order by 1 desc
+limit 50
+;
+--in 2016 youngest riders were 16 y.o.--
+
+select user_birth_year, count(*)
+from bluebikes_2019
+group by 1
+order by 1 desc
+limit 50
+;
+
+
+-- old code not worth saving. early EDA queries--
+select user_gender
+from bluebikes_2016
+group by user_gender
+limit 10
+;
+
+select *
+from bluebikes_2017
+limit 30
+;
+
+select *
+from bluebikes_2018
+order by 7 desc
+limit 10
+;
+
+select *
+from bluebikes_2019
+order by 7
+limit 10
+;
+
+/*
+select *
+from bluebikes_stations
+limit 400
+;
+*/
+
+
+--------------
+*********************MAIN QUESTIONS*************************************************************
+Here are the main questions I answered along with the code to answer each one.
+
+--main questions--
+/*
+1.	For each year 2016-2019 how many of our total trips were taken by customers? By subscribers? Express as number and percentage. DONE
+2.	What % of customer trips were taken by women / men for 2016-2019? For subscribers? PENDING...
+3.	What percentage of customer trips fall into each of the following demographics? For subscribers? DONE
+GenZ (born 1997-2012)
+Millenials (born 1981-1996)
+GenX (born 1965-1980)
+Boomers (born 1946 – 1964)
+Silent (born 1928 – 1945)
+4.	What are the top 10 most popular stations from which to start a trip for customers? For subscribers? DONE
+5.	What are the top 10 most popular stations to end a trip for customers? For subscribers? DONE
+6.	What are the most popular days of the week for subscriber trips? Customer trips? DONE
+7.	What are the most popular hours of the day for customer trips mon-fri? sat-sun? DONE
+8.	What are the most popular hours of the day for subscriber trips mon-fri? sat-sun? DONE
+*/
+
+/* leftover questions from EDA
+there are a number of trips that start on one day and end many days later... are they anomalies? must have cost a fortune. bluebikes now charges $1,200 for a 'lost or stolen' bike. 
+How many of these unusually long trips are there? Should I cap length with a where clause applying to all analysis?
+*/
+
+--1. For each year 2016-2019 how many of our total trips were taken by customers? By subscribers? Express as number and percentage.--
+-- for all years combined, here is the count of subscriber and customer trips:--
+--"Subscriber"	5513821--
+--"Customer"	1326499--
+select user_type, count(user_type)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+	group by user_type
+limit 5
+;
+--here's how I got the answer to question 1 (without %). total trips by user type by year--
+select date_trunc('year', start_time) as year, count(bike_id), user_type
+from (select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+group by 1,3
+order by 1,3
+limit 9
+;
+
+
+/*
+3. What percentage of customer trips fall into each of the following demographics? For subscribers?
+GenZ (born 1997-2012)
+Millenials (born 1981-1996)
+GenX (born 1965-1980)
+Boomers (born 1946 – 1964)
+Silent (born 1928 – 1945)
+*/
+--in 2016 my youngest bracket would capture 4yo-19year olds. in 2019 youngest bracket captures 7yo-22yos. --
+--in 2016 my oldest bracket captures 71yo-88yo. in 2019 oldest bracket captures 74-91--
+--seems as though you need to be 16 to choose to take your own trip. not sure what they were doing 2016-2019 for families/children. confirmed 16 is the minimum age to choose to ride on your own through website--
+
+--first, I'd like to see how many trip were taken by each individual birth year--
+select user_birth_year::numeric, count(user_birth_year)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+	group by 1
+	order by 1
+limit 50
+;
+--
+
+-- does 2019 have any nulls in birth year?--
+select user_type, user_birth_year
+from bluebikes_2019
+	where user_birth_year is null
+limit 5
+;
+--it appears it does not--
+
+-- nulls by user type in years other than 2019--
+select count(*)
+from bluebikes_2018
+	where user_birth_year is not null and user_type Like 'Customer'
+limit 5
+;
+--
+
+
+--number of trips taken by each generation of customer all years 2016-2019--
+select t1.generation, t1.num_customer_trips
+from(
+select case 
+	when user_birth_year::numeric is not null and user_birth_year::numeric between 1997 and 2012 and user_type Like 'Customer' then 'Gen Z'
+	when user_birth_year::numeric is not null and user_birth_year::numeric between 1981 and 1996 and user_type Like 'Customer' then 'Millenials'
+	when user_birth_year::numeric is not null and user_birth_year::numeric between 1965 and 1980 and user_type Like 'Customer' then 'Gen X'
+	when user_birth_year::numeric is not null and user_birth_year::numeric between 1946 and 1964 and user_type Like 'Customer' then 'Baby Boomers'
+	when user_birth_year::numeric is not null and user_birth_year::numeric between 1928 and 1945 and user_type Like 'Customer' then 'Silent'
+	end as generation, 
+	count(all_years_table.bike_id) as num_customer_trips
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+group by 1
+order by 2 desc) t1
+where generation is not null
+;
+
+
+-- num trips taken by each generation of subscriber all years 2016-2019--
+select t1.generation, t1.num_subscriber_trips
+from(
+select case 
+	when user_birth_year::numeric is not null and user_birth_year::numeric between 1997 and 2012 and user_type Like 'Subscriber' then 'Gen Z'
+	when user_birth_year::numeric is not null and user_birth_year::numeric between 1981 and 1996 and user_type Like 'Subscriber' then 'Millenials'
+	when user_birth_year::numeric is not null and user_birth_year::numeric between 1965 and 1980 and user_type Like 'Subscriber' then 'Gen X'
+	when user_birth_year::numeric is not null and user_birth_year::numeric between 1946 and 1964 and user_type Like 'Subscriber' then 'Baby Boomers'
+	when user_birth_year::numeric is not null and user_birth_year::numeric between 1928 and 1945 and user_type Like 'Subscriber' then 'Silent'
+	end as generation, 
+	count(all_years_table.bike_id) as num_subscriber_trips
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+group by 1
+order by 2 desc) t1
+where generation is not null
+limit 10
+;
+
+
+--since 2019 has all birth year fields filled, does it also still have weird bounds or did they fix that too?--
+--no. there are still subscribers from the 1800s riding in 2019.--
+select user_birth_year::numeric, user_type
+from bluebikes_2019
+order by 1
+limit 50
+;
+
+--how many records have user birth year of 1927 or older? 2136--
+--how many records do we have birth year info for? 6393171--
+select 6840320-447149
+--by eliminating customers from our demographic analysis that claim to be born in 1927 or earlier we're ignoring 0.03% of records for which we have birth year info.NBD.--
+select count(*)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+where user_birth_year::numeric <= 1927
+order by 1
+limit 50
+;
+
+
+
+--4. What are the top 10 most popular stations from which to start a trip for customers? For subscribers?--
+
+
+--all years... all users. start stations. station 67 MIT at Mass Ave / Amherst St had 189918 trips--
+
+select bss.id, bss.name, bss.district, 
+	count(row(all_years_table.bike_id, all_years_table.start_time, all_years_table.end_time))
+from (select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table 
+	join bluebikes_stations bss
+		on all_years_table.start_station_id = bss.id
+	join bluebikes_stations bse
+		on all_years_table.end_station_id = bse.id
+group by 1, 2, 3
+order by 4 desc 
+limit 10;
+
+--customers. all years. most popular start stations. station 67 MIT at Mass Ave / Amherst St had 29249--
+select bss.id, bss.name, bss.district, 
+	count(row(all_years_table.bike_id, all_years_table.start_time, all_years_table.end_time)) as num_trips
+from (select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table 
+	join bluebikes_stations bss
+		on all_years_table.start_station_id = bss.id
+	join bluebikes_stations bse
+		on all_years_table.end_station_id = bse.id
+where all_years_table.user_type Like 'Customer'
+group by 1, 2, 3
+order by 4 desc 
+limit 10;
+
+/*changing line 18 where clause to Like 'Subscriber' gets us most popular subscriber start stations for all years. station 67 MIT at Mass Ave / Amherst St had 160669. trips add up across user types.*/
+
+
+--5. What are the top 10 most popular stations to end a trip for subscribers?--
+
+select bse.id, bse.name, bse.district, 
+	count(row(all_years_table.bike_id, all_years_table.start_time, all_years_table.end_time)) as num_trips
+from (select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table 
+	join bluebikes_stations bss
+		on all_years_table.start_station_id = bss.id
+	join bluebikes_stations bse
+		on all_years_table.end_station_id = bse.id
+where all_years_table.user_type Like 'Subscriber'
+group by 1, 2, 3
+order by 4 desc 
+limit 10;
+
+--for customers? just change where clause to Like 'Customer'--
+
+
+
+--6. What are the most popular days of the week for subscriber trips? Customer trips?--
+
+--started here--
+select extract(DOW from start_time) as day_of_week, count(*)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+group by 1
+order by 2 desc
+limit 10
+;
+
+--let's do two things. First, make the days of the week read as text. then, specific to subscribers--
+
+select 
+	case when t1.day_of_week = 0 then 'Sunday'
+	when t1.day_of_week = 1 then 'Monday'
+	when t1.day_of_week = 2 then 'Tuesday'
+	when t1.day_of_week = 3 then 'Wednesday'
+	when t1.day_of_week = 4 then 'Thursday'
+	when t1.day_of_week = 5 then 'Friday'
+	when t1.day_of_week = 6 then 'Saturday'
+	end as day_of_week, count(t1.start_time)
+from(
+select extract(DOW from start_time) as day_of_week, count(*)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+group by 1
+order by 1) as t1
+group by 1
+order by 1
+;
+
+--hold up, I might not need subquery. maybe just cast DOW as text??--
+
+select extract(DOW from start_time) as day_of_week, count(*), 
+case when day_of_week = 0 then 'Sunday'
+	when day_of_week = 1 then 'Monday'
+	when day_of_week = 2 then 'Tuesday'
+	when day_of_week = 3 then 'Wednesday'
+	when day_of_week = 4 then 'Thursday'
+	when day_of_week = 5 then 'Friday'
+	when day_of_week = 6 then 'Saturday'
+	end as day_of_week_text
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+group by 1
+order by 1
+limit 10
+;
+
+
+--one more time before making it specific to subscribers (this works for all riders all years)--
+
+select case extract(DOW from start_time)
+	when 0 then '6_Sunday'
+	when 1 then '0_Monday'
+	when 2 then '1_Tuesday'
+	when 3 then '2_Wednesday'
+	when 4 then '3_Thursday'
+	when 5 then '4_Friday'
+	when 6 then '5_Saturday'
+	end as day_of_week,
+	count(*)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+group by 1
+order by 1
+;
+
+--make it specific to subscribers all years--
+
+select case extract(DOW from start_time)
+	when 0 then '6_Sunday'
+	when 1 then '0_Monday'
+	when 2 then '1_Tuesday'
+	when 3 then '2_Wednesday'
+	when 4 then '3_Thursday'
+	when 5 then '4_Friday'
+	when 6 then '5_Saturday'
+	end as day_of_week,
+	count(*)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+where user_type Like 'Subscriber'
+group by 1
+order by 1
+;
+
+--just change where clause to make it specific to customers all years--
+
+
+
+--7.	What are the most popular hours of the day for customer trips mon-fri?--
+
+select extract(HOUR from start_time) as hour_of_day,
+	count(*)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+where user_type Like 'Customer' and extract(DOW from start_time) between 1 and 5 
+group by 1
+order by 1
+;
+
+--customer sat sun--
+
+select extract(HOUR from start_time) as hour_of_day,
+	count(*)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+where user_type Like 'Customer' and extract(DOW from start_time) = 6 or extract(DOW from start_time) = 0
+group by 1
+order by 1
+;
+
+
+--8.	What are the most popular hours of the day for subscriber trips mon-fri?--
+
+select extract(HOUR from start_time) as hour_of_day,
+	count(*)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+where user_type Like 'Subscriber' and extract(DOW from start_time) between 1 and 5 
+group by 1
+order by 1
+;
+
+--8.	What are the most popular hours of the day for subscriber trips Sat-Sun?--
+
+select extract(HOUR from start_time) as hour_of_day,
+	count(*)
+from(
+	select *
+	from bluebikes_2016
+	union
+	select *
+	from bluebikes_2017
+	union
+	select *
+	from bluebikes_2018
+	union
+	select *
+	from bluebikes_2019) as all_years_table
+where user_type Like 'Subscriber' and extract(DOW from start_time) = 6 or extract(DOW from start_time) = 0
+group by 1
+order by 1
+;
