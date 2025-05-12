@@ -1,0 +1,90 @@
+phase 2 documentation.
+Tableau
+
+In age histogram:
+I changed User Birth Year from string to number (whole). then to 'date and time'
+
+strange spike in customer trips for customers aged 49 that I didn't see before. ~230k of them happened feb-dec 2018. rebrand year from hubway.
+
+continues for 50 yos (same group) in 2019. for both years it follows annual seasonal trend. less in winter, more in summer fall. 360k trips 2019
+
+45% of all customer trips are from this 49-50 yo group.
+
+User Age = 
+DATEDIFF('year',[User Birth Year],[Start Time],'sunday')
+
+
+
+
+https://www.theinformationlab.co.uk/community/blog/how-to-create-an-origin-destination-map-in-tableau/
+
+
+new calculated field for User Generation
+
+look at format of 'date and time' data type in tableau. It's 1/1/yyyy 12:00:00 AM.
+
+cast birth year to numeric by creating a new calc field first that only does that. Then build my case statement for USER GENERATION calc field.
+here's how USER GENERATION calc field was going:*/
+CASE WHEN IF NOT ISNULL([User Birth Year]) AND IF ([User Birth Year] >= 1/1/1928 12:00:00  AND [User Birth Year] <= 1945) THEN "Silent" 
+
+
+changed original User Birth Year data type to "date". Now format is 1/1/yyyy
+Here's my most recent code for User Generation calculated field:
+
+
+CASE WHEN IF NOT ISNULL([User Birth Year])AND IF (DATEPART(YEAR,([User Birth Year]))>=1928) AND IF (DATEPART(YEAR([User Birth Year]))<=1945) THEN "Silent"
+WHEN IF NOT ISNULL([User Birth Year])AND IF (DATEPART(YEAR,([User Birth Year]))>=1946) AND IF (DATEPART(YEAR([User Birth Year]))<=1964) THEN "Baby Boomers"
+WHEN IF NOT ISNULL([User Birth Year])AND IF (DATEPART(YEAR,([User Birth Year]))>=1965) AND IF (DATEPART(YEAR([User Birth Year]))<=1980) THEN "Gen X"
+WHEN IF NOT ISNULL([User Birth Year])AND IF (DATEPART(YEAR,([User Birth Year]))>=1981) AND IF (DATEPART(YEAR([User Birth Year]))<=1996) THEN "Millenials"
+WHEN IF NOT ISNULL([User Birth Year])AND IF (DATEPART(YEAR,([User Birth Year]))>=1997) AND IF (DATEPART(YEAR([User Birth Year]))<=2012) THEN "Gen Z"
+END
+
+-- it says my syntax error is on the first when clause and thinks I'm missing an identifier --
+
+went with IF instead of CASE
+
+IF NOT ISNULL([User Birth Year]) AND YEAR([User Birth Year]) >= 1928 AND YEAR([User Birth Year]) <= 1945 THEN
+    'Silent'
+ELSEIF NOT ISNULL([User Birth Year]) AND YEAR([User Birth Year]) >= 1946 AND YEAR([User Birth Year]) <= 1964 THEN
+    'Baby Boomers'
+ELSEIF NOT ISNULL([User Birth Year]) AND YEAR([User Birth Year]) >= 1965 AND YEAR([User Birth Year]) <= 1980 THEN
+    'Gen X'
+ELSEIF NOT ISNULL([User Birth Year]) AND YEAR([User Birth Year]) >= 1981 AND YEAR([User Birth Year]) <= 1996 THEN
+    'Millennials'
+ELSEIF NOT ISNULL([User Birth Year]) AND YEAR([User Birth Year]) >= 1997 AND YEAR([User Birth Year]) <= 2012 THEN
+    'Gen Z'
+END
+
+
+
+to measure trip length... make a calc field called trip ID. concat of bike ID, ... nevermind. 
+
+Trips get "really long" up until 8.6 days. then there are 5 absurdly long trips lasting from 30 to 124 days. let's exclude those last 5 trips. anything >= 2,598,919 seconds which = 43,315 minutes which = 721 hours which = 30 days.
+
+
+for all trip lengths, the upper whisker is at 14232 minutes (9.8 days)
+If I limit the range to that, and run the box plot on that...
+
+
+--trip length--
+498435 minutes longest. that's 8307 hours or 346 days. 1 trip.
+give or take 7 days,,,>
+1 at 3962 hours or 165 days
+1 at 2975 hours or 124 days
+1 at 2529 hours or 105 days
+1 at 136,505 2283 hours or 95 days
+2 at 85 days
+5 at 77 days
+6 at 68 days
+"You had seven trips lasting anywhere from 95 to 346 days. We started to see multiple trips at around the 90 day mark and below, so even though 90 days is still a surprising length of time to hold onto a bike, I left those figures in. The 7 longest trips, however, I excluded."
+
+
+
+--Routes--
+254987 nulls for number of trips by route name... that's 3.7% of total trips... wonder if the cause is the three stations that don't have IDs:
+"Graham and Parks School ? Linnaean St at Walker St"
+"N. Beacon St at N. Beacon Ct"
+"Watertown Sq"
+How to find out? 
+
+
